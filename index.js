@@ -19,6 +19,7 @@ app.use(express.json());
 
 const path = require('path');
 
+
 // Serve static files from the 'uploads' directory
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
@@ -108,7 +109,7 @@ const technologySchema = new mongoose.Schema({
 
 const tutorialSchema = new mongoose.Schema({
   name: String,
-  icon: String,         // e.g. icon path or URL
+  newIcon: String,         // e.g. icon path or URL
   description: String,
   tutorialLink: String
 });
