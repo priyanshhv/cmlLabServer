@@ -11,7 +11,7 @@ const multer = require('multer');
 const dotenv = require('dotenv');
 const cors = require('cors');
 // NEW: Import Vercel Blob method
-const { putBlob } = require('@vercel/blob');
+const { put } = require('@vercel/blob');
 
 dotenv.config();
 
@@ -178,7 +178,7 @@ app.post('/api/users/register', upload.single('image'), async (req, res) => {
       const fileBuffer = req.file.buffer;
       const originalName = req.file.originalname;
       // Upload to Vercel Blob
-      const { url } = await putBlob(`user-images/${Date.now()}-${originalName}`, fileBuffer, {
+      const { url } = await put(`user-images/${Date.now()}-${originalName}`, fileBuffer, {
         access: 'public',
         contentType: req.file.mimetype
       });
@@ -343,7 +343,7 @@ app.post('/api/publications', [authenticate, checkTeamMembership, upload.single(
         if (req.file) {
           const buffer = req.file.buffer;
           const originalName = req.file.originalname;
-          const { url } = await putBlob(`cover-images/${Date.now()}-${originalName}`, buffer, {
+          const { url } = await put(`cover-images/${Date.now()}-${originalName}`, buffer, {
             access: 'public',
             contentType: req.file.mimetype
           });
@@ -526,7 +526,7 @@ app.post('/api/technology', [authenticate, upload.single('icon')], async (req, r
     if (req.file) {
       const buffer = req.file.buffer;
       const originalName = req.file.originalname;
-      const { url } = await putBlob(`tech-icons/${Date.now()}-${originalName}`, buffer, {
+      const { url } = await put(`tech-icons/${Date.now()}-${originalName}`, buffer, {
         access: 'public',
         contentType: req.file.mimetype
       });
@@ -578,7 +578,7 @@ app.post('/api/tutorial', [authenticate, upload.single('newIcon')], async (req, 
     if (req.file) {
       const buffer = req.file.buffer;
       const originalName = req.file.originalname;
-      const { url } = await putBlob(`tutorial-icons/${Date.now()}-${originalName}`, buffer, {
+      const { url } = await put(`tutorial-icons/${Date.now()}-${originalName}`, buffer, {
         access: 'public',
         contentType: req.file.mimetype
       });
