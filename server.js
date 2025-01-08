@@ -1,4 +1,8 @@
-// Import dependencies
+//////////////////////////////
+//  server.js (or index.js)
+//////////////////////////////
+
+// 1. Import dependencies
 const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
@@ -6,40 +10,52 @@ const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const dotenv = require('dotenv');
 const cors = require('cors');
+// NEW: Import Vercel Blob method
+const { putBlob } = require('@vercel/blob');
+
 dotenv.config();
 
 const app = express();
-// Allow requests from specific origin
+
+// 2. Allow requests from specific origin
 app.use(cors({
-    origin: 'http://localhost:3000', // Frontend URL
-    methods: ['GET', 'POST', 'PUT', 'DELETE','PATCH'], // Allowed HTTP methods
-    credentials: true, // Include credentials like cookies
+    origin: '*', // Frontend URL
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+    credentials: true,
 }));
+
 app.use(express.json());
 
-const path = require('path');
+// 3. Connect to MongoDB
+mongoose.connect(process.env.MONGO_URI, { 
+  useNewUrlParser: true, 
+  useUnifiedTopology: true 
+});
 
+// 4. Define Schemas & Models
 
-// Serve static files from the 'uploads' directory
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-
-// MongoDB Connection
-mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
-
-// MongoDB Schemas
 const userSchema = new mongoose.Schema({
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
     address: { type: String },
-    role: { type: String, enum: ['PhD Student', 'Researcher', 'Admin'], required: true },
+    role: { type: String, required: true },
     bio: { type: String },
     image: { type: String },
-    timeline: [{
+    education: [{
         institution: String,
         degree: String,
         startDate: Date,
         endDate: Date,
+    }],
+    experience: [{
+        institution: String,
+        degree: String,
+        startDate: Date,
+        endDate: Date,
+    }],
+    links: [{
+        linkType: String,
+        link: String,
     }],
     password: { type: String, required: true },
     isAdmin: { type: Boolean, default: false },
@@ -48,22 +64,20 @@ const userSchema = new mongoose.Schema({
 const publicationSchema = new mongoose.Schema({
     title: { type: String, required: true },
     authors: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }],
-    additionalAuthors: [{ type: String }], // Renamed from unregistered_authors
+    additionalAuthors: [{ type: String }], 
     summary: { type: String },
     coverImage: { type: String },
     doi: { type: String },
-    year: { type: Number, default: () => new Date().getFullYear() }, // Automatically set to current year
-}, { timestamps: true }); // Optional: Adds createdAt and updatedAt fields
-
+    year: { type: Number, default: () => new Date().getFullYear() },
+}, { timestamps: true });
 
 const teamSchema = new mongoose.Schema({
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     addedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    isAlumni: { type: Boolean, default: false }
 });
 
-// ====================
-// 1) ADDRESS MODEL + ROUTES
-// ====================
+// ADDRESS
 const addressSchema = new mongoose.Schema({
   room: String,
   department: String,
@@ -74,59 +88,43 @@ const addressSchema = new mongoose.Schema({
   country: String
 });
 
-
-// ====================
-// 2) ROLE MODEL + ROUTES
-// ====================
-
+// ROLE
 const roleSchema = new mongoose.Schema({
-  roleName: String // e.g. "PhD Student", "Scholar", "Researcher"
+  roleName: String // e.g. "PhD Student"
 });
 
-
-// ====================
-// 3) RESOURCETEXT MODEL + ROUTES
-// ====================
-
-const resourceTextSchema = new mongoose.Schema({
+// ABOUT
+const aboutSchema = new mongoose.Schema({
   text: String // Could be a large string 
 });
 
-// ====================
-// 4) TECHNOLOGY MODEL + ROUTES
-// ====================
-
+// TECHNOLOGY
 const technologySchema = new mongoose.Schema({
   name: String,
-  icon: String,         // e.g. URL or path to icon
+  icon: String,         // e.g. URL to icon
   description: String,
-  downloadLink: String  // e.g. link to .zip or PDF
+  downloadLink: String  
 });
 
-// ====================
-// 5) TUTORIAL MODEL + ROUTES
-// ====================
-
+// TUTORIAL
 const tutorialSchema = new mongoose.Schema({
   name: String,
-  newIcon: String,         // e.g. icon path or URL
+  newIcon: String,      
   description: String,
   tutorialLink: String
 });
 
-
+// Create models
 const User = mongoose.model('User', userSchema);
 const Publication = mongoose.model('Publication', publicationSchema);
 const Team = mongoose.model('Team', teamSchema);
 const Address = mongoose.model('Address', addressSchema);
-const Technology = mongoose.model('Technology', technologySchema);
-const ResourceText = mongoose.model('ResourceText', resourceTextSchema);
 const Role = mongoose.model('Role', roleSchema);
+const AboutText = mongoose.model('AboutText', aboutSchema);
+const Technology = mongoose.model('Technology', technologySchema);
 const Tutorial = mongoose.model('Tutorial', tutorialSchema);
 
-
-
-// Middleware for authentication
+// 5. Middleware for authentication
 const authenticate = async (req, res, next) => {
     let token = req.header('Authorization');
     if (!token) return res.status(401).send('Access denied');
@@ -153,60 +151,88 @@ const checkTeamMembership = async (req, res, next) => {
     }
 };
 
-// File upload configuration
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, 'uploads/'),
-    filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
-});
+// 6. Configure Multer to use Memory Storage
+const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// API Endpoints
+///////////////////////////////////////////////////////
+//                    API ROUTES
+///////////////////////////////////////////////////////
 
-// User registration
-app.post('/api/users/register',[upload.single('image')], async (req, res) => {
-    try {
-        const { name, email, address, role, bio, timeline, password } = req.body;
-        const image = req.file.path;
+// ===================
+// USER REGISTRATION
+// ===================
+app.post('/api/users/register', upload.single('image'), async (req, res) => {
+  try {
+    // Extract main fields
+    const { name, email, address, role, bio, password } = req.body;
 
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
+    // Parse nested JSON fields if they exist
+    const education = JSON.parse(req.body.education || '[]');
+    const experience = JSON.parse(req.body.experience || '[]');
+    const links = JSON.parse(req.body.links || '[]');
 
-        const user = new User({
-            name,
-            email,
-            address,
-            image,
-            role,
-            bio,
-            timeline,
-            password: hashedPassword,
-        });
-
-        await user.save();
-        res.status(201).send('User registered successfully');
-    } catch (error) {
-        res.status(500).send(error.message);
+    // If file was uploaded, upload to Vercel Blob
+    let uploadedImageUrl = null;
+    if (req.file) {
+      const fileBuffer = req.file.buffer;
+      const originalName = req.file.originalname;
+      // Upload to Vercel Blob
+      const { url } = await putBlob(`user-images/${Date.now()}-${originalName}`, fileBuffer, {
+        access: 'public',
+        contentType: req.file.mimetype
+      });
+      uploadedImageUrl = url;
     }
+
+    // Hash the password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Create & save user
+    const user = new User({
+      name,
+      email,
+      address,
+      role,
+      bio,
+      image: uploadedImageUrl, // store the Vercel Blob URL
+      education,
+      experience,
+      links,
+      password: hashedPassword,
+    });
+
+    await user.save();
+    res.status(201).send('User registered successfully');
+  } catch (error) {
+    console.error('Error during registration:', error);
+    res.status(500).send('Internal Server Error: ' + error.message);
+  }
 });
 
-// User authentication
+// ===================
+// USER LOGIN
+// ===================
 app.post('/api/users/login', async (req, res) => {
-    try {
-        const { email, password } = req.body;
-        const user = await User.findOne({ email });
-        if (!user) return res.status(400).send('Invalid email or password');
+  try {
+      const { email, password } = req.body;
+      const user = await User.findOne({ email });
+      if (!user) return res.status(400).send('Invalid email or password');
 
-        const validPassword = await bcrypt.compare(password, user.password);
-        if (!validPassword) return res.status(400).send('Invalid email or password');
+      const validPassword = await bcrypt.compare(password, user.password);
+      if (!validPassword) return res.status(400).send('Invalid email or password');
 
-        const token = jwt.sign({ _id: user._id, role: user.role }, process.env.JWT_SECRET);
-        res.header('Authorization', token).send({user:user,token:token});
-    } catch (error) {
-        res.status(500).send(error.message);
-    }
+      const token = jwt.sign({ _id: user._id, role: user.role }, process.env.JWT_SECRET);
+      res.header('Authorization', token).send({ user, token });
+  } catch (error) {
+      res.status(500).send(error.message);
+  }
 });
 
-// Add team member
+// ===================
+// TEAM MANAGEMENT
+// ===================
 app.post('/api/team', authenticate, async (req, res) => {
     try {
         if (!req.user.isAdmin) return res.status(403).send('Access denied');
@@ -224,27 +250,42 @@ app.post('/api/team', authenticate, async (req, res) => {
     }
 });
 
-// Remove team member
 app.delete('/api/team/:userId', authenticate, async (req, res) => {
     try {
         if (!req.user.isAdmin) return res.status(403).send('Access denied');
-
         const { userId } = req.params;
 
-        // Find and remove the team member
         const removedMember = await Team.findOneAndDelete({ userId });
         if (!removedMember) {
             return res.status(404).send('Team member not found');
         }
-
         res.status(200).send('Team member removed successfully');
     } catch (error) {
         res.status(500).send(error.message);
     }
 });
 
+// Toggle Alumni
+app.patch('/api/team/:userId/alumni', authenticate, async (req, res) => {
+    try {
+        if (!req.user.isAdmin) return res.status(403).send('Access denied');
 
-// Fetch all team members
+        const { userId } = req.params;
+        const member = await Team.findOne({ userId });
+        if (!member) return res.status(404).send('Team member not found');
+
+        member.isAlumni = !member.isAlumni; // Toggle
+        await member.save();
+
+        res.status(200).send({
+            message: 'Team member alumni status toggled successfully',
+            updatedMember: member
+        });
+    } catch (error) {
+        res.status(500).send(error.message);
+    }
+});
+
 app.get('/api/team', async (req, res) => {
     try {
         const teamMembers = await Team.find().exec();
@@ -254,7 +295,9 @@ app.get('/api/team', async (req, res) => {
     }
 });
 
-// Fetch all users 
+// ===================
+// USERS
+// ===================
 app.get('/api/user', async (req, res) => {
     try {
         const users = await User.find().exec();
@@ -264,18 +307,55 @@ app.get('/api/user', async (req, res) => {
     }
 });
 
-// Add publication
+app.get('/api/admins', async (req, res) => {
+    try {
+        const admins = await User.find({ isAdmin: true }).exec();
+        if (admins.length === 0) {
+            return res.status(404).json({ message: 'No admins found' });
+        }
+        res.status(200).json(admins);
+    } catch (error) {
+        res.status(500).json({ 
+          message: 'An error occurred while fetching admins', 
+          error: error.message 
+        });
+    }
+});
+
+app.get('/api/user/:id', async (req, res) => {
+    try {
+        const user = await User.findById(req.params.id).exec();
+        if (!user) return res.status(404).send('User not found');
+        res.status(200).json(user);
+    } catch (error) {
+        res.status(500).send(error.message);
+    }
+});
+
+// ===================
+// PUBLICATIONS
+// ===================
 app.post('/api/publications', [authenticate, checkTeamMembership, upload.single('coverImage')], async (req, res) => {
     try {
         const { title, authors, additionalAuthors, summary, doi } = req.body;
-        const coverImage = req.file.path;
+
+        let coverImageUrl = null;
+        if (req.file) {
+          const buffer = req.file.buffer;
+          const originalName = req.file.originalname;
+          const { url } = await putBlob(`cover-images/${Date.now()}-${originalName}`, buffer, {
+            access: 'public',
+            contentType: req.file.mimetype
+          });
+          coverImageUrl = url;
+        }
 
         const publication = new Publication({
             title,
             authors,
             additionalAuthors,
             summary,
-            coverImage,
+            coverImage: coverImageUrl,
             doi,
         });
 
@@ -286,12 +366,11 @@ app.post('/api/publications', [authenticate, checkTeamMembership, upload.single(
     }
 });
 
-// Retrieve the 5 most recent publications
 app.get('/api/publications', async (req, res) => {
     try {
         const publications = await Publication.find()
-            .sort({ createdAt: -1 })  // Sort by creation date in descending order
-            .limit(5)                 // Limit to 5 documents
+            .sort({ createdAt: -1 })
+            .limit(5)
             .exec();
         res.status(200).json(publications);
     } catch (error) {
@@ -299,7 +378,6 @@ app.get('/api/publications', async (req, res) => {
     }
 });
 
-// Retrieve all publications from a given year
 app.get('/api/publications/year/:year', async (req, res) => {
     try {
         const year = parseInt(req.params.year, 10);
@@ -310,8 +388,7 @@ app.get('/api/publications/year/:year', async (req, res) => {
     }
 });
 
-
-// Retrieve a specific team member's details and their publications
+// Retrieve specific member & their publications
 app.get('/api/team/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
@@ -319,19 +396,15 @@ app.get('/api/team/:userId', async (req, res) => {
         if (!teamMember) return res.status(404).send('User not found');
 
         const publications = await Publication.find({ authors: userId }).exec();
-
         res.status(200).json({ teamMember, publications });
     } catch (error) {
         res.status(500).send(error.message);
     }
 });
 
-
-/**
- * POST /api/address
- *  Create a new address document. 
- *  Authentication required. Possibly admin-only if you want.
- */
+// ===================
+// ADDRESS
+// ===================
 app.post('/api/address', authenticate, async (req, res) => {
   try {
     const { room, department, institution, city, state, postalCode, country } = req.body;
@@ -351,10 +424,6 @@ app.post('/api/address', authenticate, async (req, res) => {
   }
 });
 
-/**
- * GET /api/address
- *  Return all addresses or adapt for a single address if you only expect one doc.
- */
 app.get('/api/address', async (req, res) => {
   try {
     const addresses = await Address.find().exec();
@@ -364,19 +433,11 @@ app.get('/api/address', async (req, res) => {
   }
 });
 
-/**
- * PATCH /api/address/:id
- *  Update a specific address doc by ID. Authentication required.
- */
 app.patch('/api/address/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body; 
-    const updated = await Address.findByIdAndUpdate(
-      id,
-      { $set: updates },
-      { new: true }
-    );
+    const updated = await Address.findByIdAndUpdate(id, { $set: updates }, { new: true });
     if (!updated) return res.status(404).json({ message: 'Address not found' });
     return res.json(updated);
   } catch (error) {
@@ -384,10 +445,9 @@ app.patch('/api/address/:id', authenticate, async (req, res) => {
   }
 });
 
-/**
- * POST /api/role
- *  Create a new role doc (e.g. "PhD Student")
- */
+// ===================
+// ROLE
+// ===================
 app.post('/api/role', authenticate, async (req, res) => {
   try {
     const { roleName } = req.body;
@@ -399,10 +459,6 @@ app.post('/api/role', authenticate, async (req, res) => {
   }
 });
 
-/**
- * GET /api/role
- *  Return all roles, or you can store only one doc if that's your use case.
- */
 app.get('/api/role', async (req, res) => {
   try {
     const roles = await Role.find().exec();
@@ -412,10 +468,6 @@ app.get('/api/role', async (req, res) => {
   }
 });
 
-/**
- * PATCH /api/role/:id
- *  Update role (like changing roleName).
- */
 app.patch('/api/role/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
@@ -428,13 +480,13 @@ app.patch('/api/role/:id', authenticate, async (req, res) => {
   }
 });
 
-/**
- * POST /api/resourcetext
- */
-app.post('/api/resourcetext', authenticate,async (req, res) => {
+// ===================
+// ABOUT TEXT
+// ===================
+app.post('/api/about', authenticate, async (req, res) => {
   try {
     const { text } = req.body;
-    const resource = new ResourceText({ text });
+    const resource = new AboutText({ text });
     await resource.save();
     return res.status(201).json(resource);
   } catch (error) {
@@ -442,26 +494,20 @@ app.post('/api/resourcetext', authenticate,async (req, res) => {
   }
 });
 
-/**
- * GET /api/resourcetext
- */
-app.get('/api/resourcetext', async (req, res) => {
+app.get('/api/about', async (req, res) => {
   try {
-    const allResources = await ResourceText.find().exec();
+    const allResources = await AboutText.find().exec();
     return res.json(allResources);
   } catch (error) {
     res.status(500).send(error.message);
   }
 });
 
-/**
- * PATCH /api/resourcetext/:id
- */
-app.patch('/api/resourcetext/:id', authenticate, async (req, res) => {
+app.patch('/api/about/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
-    const updates = req.body; // { text: "New resource text" }
-    const updated = await ResourceText.findByIdAndUpdate(id, { $set: updates }, { new: true });
+    const updates = req.body;
+    const updated = await AboutText.findByIdAndUpdate(id, { $set: updates }, { new: true });
     if (!updated) return res.status(404).json({ message: 'Resource text not found' });
     return res.json(updated);
   } catch (error) {
@@ -469,15 +515,30 @@ app.patch('/api/resourcetext/:id', authenticate, async (req, res) => {
   }
 });
 
-
-/**
- * POST /api/technology
- */
+// ===================
+// TECHNOLOGY
+// ===================
 app.post('/api/technology', [authenticate, upload.single('icon')], async (req, res) => {
   try {
     const { name, description, downloadLink } = req.body;
-    const icon = req.file.path;
-    const tech = new Technology({ name, icon, description, downloadLink });
+
+    let iconUrl = null;
+    if (req.file) {
+      const buffer = req.file.buffer;
+      const originalName = req.file.originalname;
+      const { url } = await putBlob(`tech-icons/${Date.now()}-${originalName}`, buffer, {
+        access: 'public',
+        contentType: req.file.mimetype
+      });
+      iconUrl = url;
+    }
+
+    const tech = new Technology({ 
+      name, 
+      icon: iconUrl, 
+      description, 
+      downloadLink 
+    });
     await tech.save();
     return res.status(201).json(tech);
   } catch (error) {
@@ -485,9 +546,6 @@ app.post('/api/technology', [authenticate, upload.single('icon')], async (req, r
   }
 });
 
-/**
- * GET /api/technology
- */
 app.get('/api/technology', async (req, res) => {
   try {
     const techs = await Technology.find().exec();
@@ -497,13 +555,10 @@ app.get('/api/technology', async (req, res) => {
   }
 });
 
-/**
- * PATCH /api/technology/:id
- */
 app.patch('/api/technology/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
-    const updates = req.body; // partial updates
+    const updates = req.body;
     const updated = await Technology.findByIdAndUpdate(id, { $set: updates }, { new: true });
     if (!updated) return res.status(404).json({ message: 'Technology not found' });
     return res.json(updated);
@@ -512,14 +567,30 @@ app.patch('/api/technology/:id', authenticate, async (req, res) => {
   }
 });
 
-/**
- * POST /api/tutorial
- */
+// ===================
+// TUTORIAL
+// ===================
 app.post('/api/tutorial', [authenticate, upload.single('newIcon')], async (req, res) => {
   try {
     const { name, description, tutorialLink } = req.body;
-    const newIcon = req.file.path;
-    const tut = new Tutorial({ name, newIcon, description, tutorialLink });
+
+    let newIconUrl = null;
+    if (req.file) {
+      const buffer = req.file.buffer;
+      const originalName = req.file.originalname;
+      const { url } = await putBlob(`tutorial-icons/${Date.now()}-${originalName}`, buffer, {
+        access: 'public',
+        contentType: req.file.mimetype
+      });
+      newIconUrl = url;
+    }
+
+    const tut = new Tutorial({ 
+      name, 
+      newIcon: newIconUrl, 
+      description, 
+      tutorialLink 
+    });
     await tut.save();
     return res.status(201).json(tut);
   } catch (error) {
@@ -527,9 +598,6 @@ app.post('/api/tutorial', [authenticate, upload.single('newIcon')], async (req, 
   }
 });
 
-/**
- * GET /api/tutorial
- */
 app.get('/api/tutorial', async (req, res) => {
   try {
     const tutorials = await Tutorial.find().exec();
@@ -539,9 +607,6 @@ app.get('/api/tutorial', async (req, res) => {
   }
 });
 
-/**
- * PATCH /api/tutorial/:id
- */
 app.patch('/api/tutorial/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
@@ -554,6 +619,8 @@ app.patch('/api/tutorial/:id', authenticate, async (req, res) => {
   }
 });
 
-// Start server
+// ===================
+// START SERVER
+// ===================
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
