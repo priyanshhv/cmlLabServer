@@ -114,6 +114,13 @@ const tutorialSchema = new mongoose.Schema({
   tutorialLink: String
 });
 
+const notesSchema = new mongoose.Schema({
+  name: String,
+  newIcon: String,      
+  description: String,
+  noteLink: String
+});
+
 // Create models
 const User = mongoose.model('User', userSchema);
 const Publication = mongoose.model('Publication', publicationSchema);
@@ -123,6 +130,7 @@ const Role = mongoose.model('Role', roleSchema);
 const AboutText = mongoose.model('AboutText', aboutSchema);
 const Technology = mongoose.model('Technology', technologySchema);
 const Tutorial = mongoose.model('Tutorial', tutorialSchema);
+const Notes = mongoose.model('Notes', notesSchema);
 
 // 5. Middleware for authentication
 const authenticate = async (req, res, next) => {
@@ -618,6 +626,61 @@ app.patch('/api/tutorial/:id', authenticate, async (req, res) => {
     res.status(500).send(error.message);
   }
 });
+
+// ===================
+// NOTES
+// ===================
+app.post('/api/notes', [authenticate, upload.single('newIcon')], async (req, res) => {
+  try {
+    const { name, description, noteLink } = req.body;
+
+    let newIconUrl = null;
+    if (req.file) {
+      const buffer = req.file.buffer;
+      const originalName = req.file.originalname;
+      const { url } = await put(`note-icons/${Date.now()}-${originalName}`, buffer, {
+        access: 'public',
+        contentType: req.file.mimetype
+      });
+      newIconUrl = url;
+    }
+
+    // Renamed "tut" -> "note" for clarity and consistent return
+    const note = new Notes({
+      name,
+      newIcon: newIconUrl,
+      description,
+      noteLink
+    });
+
+    await note.save();
+    return res.status(201).json(note);
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+});
+
+app.get('/api/notes', async (req, res) => {
+  try {
+    const notes = await Notes.find().exec();
+    return res.json(notes);
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+});
+
+app.patch('/api/notes/:id', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+    const updated = await Notes.findByIdAndUpdate(id, { $set: updates }, { new: true });
+    if (!updated) return res.status(404).json({ message: 'Note not found' });
+    return res.json(updated);
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+});
+
 
 // ===================
 // START SERVER
