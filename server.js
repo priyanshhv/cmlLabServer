@@ -72,7 +72,7 @@
   }, { timestamps: true });
 
   const teamSchema = new mongoose.Schema({
-      userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+      userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
       addedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
       isAlumni: { type: Boolean, default: false }
   });
