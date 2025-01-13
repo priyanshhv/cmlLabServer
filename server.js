@@ -427,7 +427,7 @@ app.get('/api/userid', authenticate, async (req, res) => {
   // ===================
   app.post('/api/publications', [authenticate, checkTeamMembership, upload.single('coverImage')], async (req, res) => {
       try {
-          const { title, authors, additionalAuthors, summary, doi } = req.body;
+          const { title, authors, additionalAuthors, summary, doi,year } = req.body;
 
           let coverImageUrl = null;
           if (req.file) {
@@ -447,6 +447,7 @@ app.get('/api/userid', authenticate, async (req, res) => {
               summary,
               coverImage: coverImageUrl,
               doi,
+              year
           });
 
           await publication.save();
@@ -477,6 +478,89 @@ app.get('/api/userid', authenticate, async (req, res) => {
           res.status(500).send(error.message);
       }
   });
+
+  // ==============================
+// GET PUBLICATIONS BY USER AS AUTHOR
+// ==============================
+app.get('/api/publications/my', [authenticate, checkTeamMembership], async (req, res) => {
+    try {
+        // Get the authenticated user's ID
+        const userId = req.user._id;
+  
+
+        // Find all publications where the user is listed as an author
+        const publications = await Publication.find({ authors: userId }).exec();
+
+        res.status(200).json(publications);
+    } catch (error) {
+        console.error('Error fetching user publications:', error);
+        res.status(500).send(error.message);
+    }
+});
+
+// ==============================
+// EDIT PUBLICATION BY ID
+// ==============================
+app.patch('/api/publications/:id', [authenticate, checkTeamMembership, upload.single('coverImage')], async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updates = req.body;
+
+        // Check if the publication exists and the user is one of the authors
+        const publication = await Publication.findById(id);
+        if (!publication) return res.status(404).send('Publication not found');
+
+        // Ensure the user is an author of the publication
+        if (!publication.authors.includes(req.user._id.toString())) {
+            return res.status(403).send('Access denied: You are not an author of this publication');
+        }
+
+        // Handle cover image upload
+        if (req.file) {
+            const buffer = req.file.buffer;
+            const originalName = req.file.originalname;
+            const { url } = await put(`cover-images/${Date.now()}-${originalName}`, buffer, {
+                access: 'public',
+                contentType: req.file.mimetype
+            });
+            updates.coverImage = url;
+        }
+
+        // Update the publication
+        const updatedPublication = await Publication.findByIdAndUpdate(id, { $set: updates }, { new: true });
+        if (!updatedPublication) return res.status(404).send('Publication not found after update');
+
+        res.status(200).json(updatedPublication);
+    } catch (error) {
+        console.error('Error updating publication:', error);
+        res.status(500).send(error.message);
+    }
+});
+
+// GET publication by ID
+app.get('/api/publications/:id', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const publication = await Publication.findById(id);
+
+    if (!publication) {
+      return res.status(404).send('Publication not found');
+    }
+
+    // Optional: Ensure the requesting user is an author of the publication.
+    // If you want to allow public access, you can remove or adjust this check.
+    if (!publication.authors.includes(req.user._id.toString())) {
+      return res.status(403).send('Access denied: You are not an author of this publication');
+    }
+
+    res.status(200).json(publication);
+  } catch (error) {
+    console.error('Error retrieving publication:', error);
+    res.status(500).send(error.message);
+  }
+});
+
+
 
   // Retrieve specific member & their publications
   app.get('/api/team/:userId', async (req, res) => {
