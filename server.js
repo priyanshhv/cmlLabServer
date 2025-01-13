@@ -377,6 +377,28 @@
       }
   });
 
+  // Check Admin Status
+  app.get('/api/isAdmin', authenticate, async (req, res) => {
+      try {
+          // Ensure the request contains the authenticated user data
+          if (!req.user) return res.status(401).send('Unauthorized');
+
+          // Check if the user is an admin
+          const isAdmin = req.user.isAdmin;
+
+          res.status(200).json({
+              message: isAdmin ? 'User is an admin' : 'User is not an admin',
+              isAdmin: isAdmin,
+          });
+      } catch (error) {
+          res.status(500).json({
+              message: 'An error occurred while checking admin status',
+              error: error.message,
+          });
+      }
+  });
+
+
   app.get('/api/user/:id', async (req, res) => {
       try {
           const user = await User.findById(req.params.id).exec();
