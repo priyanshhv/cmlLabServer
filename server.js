@@ -121,6 +121,13 @@
     noteLink: String
   });
 
+  const newsSchema = new mongoose.Schema({
+    title: { type: String, required: true },
+    paragraph: { type: String, required: true }, // Markdown text
+    photos: [{ type: String }], // Array of photo URLs
+  }, { timestamps: true }); // Automatically adds createdAt & updatedAt
+
+
   // Create models
   const User = mongoose.model('User', userSchema);
   const Publication = mongoose.model('Publication', publicationSchema);
@@ -131,6 +138,8 @@
   const Technology = mongoose.model('Technology', technologySchema);
   const Tutorial = mongoose.model('Tutorial', tutorialSchema);
   const Notes = mongoose.model('Notes', notesSchema);
+  const News = mongoose.model('News', newsSchema);
+
 
   // 5. Middleware for authentication
   const authenticate = async (req, res, next) => {
@@ -269,7 +278,10 @@
       if (updates.password && updates.password.trim() !== '') {
         const salt = await bcrypt.genSalt(10);
         updates.password = await bcrypt.hash(updates.password, salt);
-      }
+      } else if (updates.password) {
+      // Remove password field if it's empty
+      delete updates.password;
+    }
 
       // 4. Run the DB update
       const updatedUser = await User.findByIdAndUpdate(req.user._id, { $set: updates }, { new: true });
@@ -858,6 +870,75 @@ app.get('/api/publications/:id', authenticate, async (req, res) => {
       res.status(500).send(error.message);
     }
   });
+
+// ===================
+// NEWS
+// ===================
+app.post('/api/news', [authenticate,checkTeamMembership, upload.array('photos')], async (req, res) => {
+  try {
+    const { title, paragraph } = req.body;
+
+    let photoUrls = [];
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        const { url } = await put(`news-photos/${Date.now()}-${file.originalname}`, file.buffer, {
+          access: 'public',
+          contentType: file.mimetype
+        });
+        photoUrls.push(url);
+      }
+    }
+
+    const news = new News({
+      title,
+      paragraph, // Markdown text
+      photos: photoUrls
+    });
+
+    await news.save();
+    return res.status(201).json(news);
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+});  
+
+// GET all news, sorted by most recent first
+app.get('/api/news', async (req, res) => {
+  try {
+    const newsList = await News.find().sort({ createdAt: -1 }).exec();
+    return res.json(newsList);
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+});
+
+app.get('/api/news/:id', async (req, res) => {
+  try {
+    const news = await News.findById(req.params.id).exec();
+    if (!news) return res.status(404).send('News not found');
+    return res.json(news);
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+});
+
+// ===================
+// DELETE NEWS BY ID
+// ===================
+app.delete('/api/news/:id', authenticate, async (req, res) => {
+  try {
+    if (!req.user.isAdmin) return res.status(403).send('Access denied');
+    const { id } = req.params;
+    const deleted = await News.findByIdAndDelete(id);
+    if (!deleted) return res.status(404).send('News not found');
+    return res.status(200).json({ message: 'News deleted successfully' });
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+});
+
+
+
 
 
   // ===================
