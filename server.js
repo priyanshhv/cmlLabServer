@@ -937,7 +937,47 @@ app.delete('/api/news/:id', authenticate, async (req, res) => {
   }
 });
 
+// ===================
+// EDIT NEWS BY ID (Title & Paragraph only)
+// ===================
+app.patch('/api/news/:id', [authenticate], async (req, res) => {
+  try {
+    if (!req.user.isAdmin) return res.status(403).send('Access denied');
+  
+    // 1. Get the ID from the URL parameters
+    const { id } = req.params;
+    
+    // 2. Get the new title and paragraph from the request body
+    const { title, paragraph } = req.body;
 
+    // 3. Validate that at least one field is being updated
+    if (!title && !paragraph) {
+      return res.status(400).send('Title or paragraph must be provided to update.');
+    }
+    
+    // 4. Find the news article by its ID and update it
+    //    - { new: true } returns the updated document
+    //    - { runValidators: true } ensures the schema requirements (e.g., 'required') are met
+    const updatedNews = await News.findByIdAndUpdate(
+      id, 
+      { $set: { title, paragraph } },
+      { new: true, runValidators: true }
+    );
+
+    // 5. If no article was found with that ID, return a 404 error
+    if (!updatedNews) {
+      return res.status(404).send('News article not found.');
+    }
+
+    // 6. Send the updated news article back to the client
+    res.status(200).json(updatedNews);
+
+  } catch (error) {
+    // Handle potential errors (e.g., database connection issue)
+    console.error('Error updating news:', error);
+    res.status(500).send('Internal Server Error: ' + error.message);
+  }
+});
 
 
 
