@@ -761,6 +761,18 @@ app.get('/api/publications/:id', authenticate, async (req, res) => {
     }
   });
 
+  app.delete('/api/technology/:id', authenticate, async (req, res) => {
+    try {
+      if (!req.user.isAdmin) return res.status(403).send('Access denied');
+      const { id } = req.params;
+      const deleted = await Technology.findByIdAndDelete(id);
+      if (!deleted) return res.status(404).send('Technology not found');
+      return res.status(200).json({ message: 'Technology deleted successfully' });
+    } catch (error) {
+      res.status(500).send(error.message);
+    }
+  });
+
   // ===================
   // TUTORIAL
   // ===================
@@ -810,6 +822,17 @@ app.get('/api/publications/:id', authenticate, async (req, res) => {
       const updated = await Tutorial.findByIdAndUpdate(id, { $set: updates }, { new: true });
       if (!updated) return res.status(404).json({ message: 'Tutorial not found' });
       return res.json(updated);
+    } catch (error) {
+      res.status(500).send(error.message);
+    }
+  });
+  app.delete('/api/tutorial/:id', authenticate, async (req, res) => {
+    try {
+      if (!req.user.isAdmin) return res.status(403).send('Access denied');
+      const { id } = req.params;
+      const deleted = await Tutorial.findByIdAndDelete(id);
+      if (!deleted) return res.status(404).send('Tutorial not found');
+      return res.status(200).json({ message: 'Tutorial deleted successfully' });
     } catch (error) {
       res.status(500).send(error.message);
     }
@@ -870,6 +893,18 @@ app.get('/api/publications/:id', authenticate, async (req, res) => {
       res.status(500).send(error.message);
     }
   });
+
+  app.delete('/api/notes/:id', authenticate, async (req, res) => {
+  try {
+    if (!req.user.isAdmin) return res.status(403).send('Access denied');
+    const { id } = req.params;
+    const deleted = await Notes.findByIdAndDelete(id);
+    if (!deleted) return res.status(404).send('Notes not found');
+    return res.status(200).json({ message: 'Notes deleted successfully' });
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+});
 
 // ===================
 // NEWS
